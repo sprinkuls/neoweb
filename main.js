@@ -1,3 +1,4 @@
+const fs = require("fs");
 const cheerio = require('cheerio');
 
 // TODO: this weird map argument thing is kinda messy idk
@@ -27,11 +28,15 @@ async function getLinksOnBrowse(browseOption, pageNr, map) {
         let link = $a.attr('href');
         let title = $a.attr('title');
 
-        let username = $el.find('div.site-info > div.username > a').attr('href').replace('/site/', '');
+        let $stats = $el.find('div.site-info > div.site-stats > a');
+        let visitors = Number($stats.contents().filter((i, node) => node.type === 'text').text().replaceAll(/(\s|,)/g, ''));
+
+        let username = $stats.attr('href').replace('/site/', '');
 
         let site = {
             url: link,
             title: title,
+            visitors: visitors,
         };
 
         map.set(username, site);
@@ -51,14 +56,22 @@ async function getLinksOnBrowse(browseOption, pageNr, map) {
         "oldest"
     ]
 
-    for (const opt of browseOptions) {
-        let sites = new Map();
-        await getLinksOnBrowse(opt, 1, sites);
+    if (process.argv.includes('rerun') || !fs.existsSync("sites.json")) {
+        console.log('regenerating data!');
+        const sites = new Map();
+        // for (const opt of browseOptions) {
+        //     await getLinksOnBrowse(opt, 1, sites);
+        // }
+        await getLinksOnBrowse("special_sauce", 1, sites);
 
-        console.log(opt + " TOP PAGES:")
+        fs.writeFileSync("sites.json", JSON.stringify(Object.fromEntries(sites)));
+    } else {
+        console.log('reading from sites.json...');
+        const sites = new Map(Object.entries(JSON.parse(fs.readFileSync("sites.json"))));
         sites.forEach((v, k) => {
-            process.stdout.write(v.url + ", ");
-        });
+            process.stdout.write(`(${k}, ${v.url}) and `);
+        })
     }
+
 
 })();
