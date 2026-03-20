@@ -1,33 +1,64 @@
 const cheerio = require('cheerio');
 
-async function getData() {
-    const url = "http://localhost:3000/demo";
-
-    try {
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`Response status: ${response.status}`);
-        }
-
-        const result = await response.text();
-        console.log(result);
-
-        const $ = cheerio.load(result);
-
-        // from neocities:
-        // "Usernames can only contain letters, numbers, and hyphens, and cannot start or end with a hyphen."
-
-        let links = [];
-        $('a').each(function(i, el) {
-            links.push($(this).attr('href'));
-        });
-        links.forEach((link) => console.log(link));
-
-
-    } catch (error) {
-        console.error(error);
-        console.error(error.message);
+// TODO: this weird map argument thing is kinda messy idk
+async function getLinksOnBrowse(browseOption, pageNr, map) {
+    if (!browseOption || !pageNr) {
+        throw new Error("pass in arguments!!!");
     }
+
+    const url = `https://neocities.org/browse?sort_by=${browseOption}&page=${pageNr}`;
+    console.log("INFO: searching for links on: " + url);
+
+    // TODO: proper error handling
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error(`Response status: ${response.status}`);
+    }
+
+    const $ = cheerio.load(await response.text());
+
+
+    // operate on each site listed on this browse page
+    $('div.browse-page > ul').children().each(function(i, el) {
+        const $el = $(el);
+
+        // "link that is a direct child of $el"
+        let $a = $el.find('> a');
+        let link = $a.attr('href');
+        let title = $a.attr('title');
+
+        let username = $el.find('div.site-info > div.username > a').attr('href').replace('/site/', '');
+
+        let site = {
+            url: link,
+            title: title,
+        };
+
+        map.set(username, site);
+    })
 }
 
-getData();
+// "main"
+(async () => {
+    const browseOptions = [
+        "special_sauce",
+        "random",
+        "most_followed",
+        "last_updated",
+        "views",
+        "tipping_enabled",
+        "newest",
+        "oldest"
+    ]
+
+    for (const opt of browseOptions) {
+        let sites = new Map();
+        await getLinksOnBrowse(opt, 1, sites);
+
+        console.log(opt + " TOP PAGES:")
+        sites.forEach((v, k) => {
+            process.stdout.write(v.url + ", ");
+        });
+    }
+
+})();
