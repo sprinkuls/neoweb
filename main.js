@@ -1,5 +1,41 @@
 const fs = require("fs");
+const URL = require("url");
 const cheerio = require('cheerio');
+
+function makeEmptyUser() {
+    return {
+        username: undefined,
+        url: undefined,
+
+        profile_visited: false,
+        crawled: false,
+
+        outbound_links: new Set(),
+        inbound_links: new Set(),
+
+        followers: undefined,
+        follows: undefined,
+        visitors: undefined,
+        views: undefined,
+        updates: undefined,
+        tips: undefined,
+    }
+}
+
+// get all tags from "Popular Tags" at the bottom of the 'browse' page
+async function getPopularTags() {
+    const url = "https://neocities.org/browse";
+    const response = await fetch(url);
+
+    if (!response.ok) {
+        throw new Error(`Response status: ${response.status}`);
+    }
+
+    const $ = cheerio.load(await response.text());
+    $('p.tagcloud').children().each(function(i, el) {
+        console.log($(this).text());
+    });
+}
 
 // helper for other functions.
 // gets the sites on a given "browse" page (tags, sort by, followers/following)
@@ -82,6 +118,11 @@ async function getFollowersAndFollows(username) {
     return all_sites;
 }
 
+// crawls the given site looking for any other neocities sites this might link to
+function crawl(baseURL) {
+
+}
+
 // "main"
 (async () => {
     const browseOptions = [
@@ -124,6 +165,7 @@ async function getFollowersAndFollows(username) {
         process.stdout.write(`(${k}, ${v.url}) and \n`);
     })
     */
+    /*
     const sites = new Map();
     (await getFollowersAndFollows("dreamy")).forEach((v, k) => {
         sites.set(k, v);
@@ -133,6 +175,9 @@ async function getFollowersAndFollows(username) {
         console.log(`(${k}\t=>\t${v.url})`);
     })
     fs.writeFileSync("dreamyfollows.json", JSON.stringify(Object.fromEntries(sites)));
+    */
+    getPopularTags();
+
 
 
 })();
