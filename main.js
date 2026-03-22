@@ -1,5 +1,4 @@
-const fs = require("fs");
-const URL = require("url");
+const fs = require('fs');
 const cheerio = require('cheerio');
 
 function makeEmptyUser() {
@@ -7,115 +6,74 @@ function makeEmptyUser() {
         username: undefined,
         url: undefined,
 
-        profile_visited: false,
-        crawled: false,
+        // profile_visited: false,
+        // crawled: false,
+
+        site_title: undefined,
+        visitors: undefined,
+        tags: [],
+
+        followers: [],
+        follows: [],
+        is_supporter: false,
+        updates: undefined,
+        tips: undefined,
 
         outbound_links: new Set(),
         inbound_links: new Set(),
-
-        followers: undefined,
-        follows: undefined,
-        visitors: undefined,
-        views: undefined,
-        updates: undefined,
-        tips: undefined,
     }
-}
-
-// get all tags from "Popular Tags" at the bottom of the 'browse' page
-async function getPopularTags() {
-    const url = "https://neocities.org/browse";
-    const response = await fetch(url);
-
-    if (!response.ok) {
-        throw new Error(`Response status: ${response.status}`);
-    }
-
-    const $ = cheerio.load(await response.text());
-    $('p.tagcloud').children().each(function(i, el) {
-        console.log($(this).text());
-    });
 }
 
 // helper for other functions.
 // gets the sites on a given "browse" page (tags, sort by, followers/following)
 // returns a map of (username, <obj>) pairs,
 // where the object has the URL for the site, number of visitors, and site title
-async function getLinksOnBrowsePage(url) {
-    // if (!browseOption || !pageNr) {
-    //     throw new Error("pass in arguments!!!");
-    // }
-    //
-    // const url = `https://neocities.org/browse?sort_by=${browseOption}&page=${pageNr}`;
+async function getLinksOnBrowsePage(users_map, url) {
     console.log("INFO: searching for links on: " + url);
 
-    // TODO: proper error handling
+    // TODO: real error handling
     const response = await fetch(url);
     if (!response.ok) {
         throw new Error(`Response status: ${response.status}`);
     }
 
-    const map = new Map();
     const $ = cheerio.load(await response.text());
-
 
     // operate on each site listed on this browse page
     $('div.browse-page > ul').children().each(function(i, el) {
+
+
         const $el = $(el);
 
-        // "link that is a direct child of $el"
-        let $a = $el.find('> a');
-        let link = $a.attr('href');
-        let title = $a.attr('title');
+        let user = makeEmptyUser();
+        // "'a' that is a direct child of $el"
+        const $a = $el.find('> a');
+        user.url = $a.attr('href');
+        user.site_title = $a.attr('title');
 
-        // the actual text isn't held in an element in the div, just a raw text node, so
+        const $stats = $el.find('div.site-info > div.site-stats > a');
+        user.username = $stats.attr('href').replace('/site/', '');
+
+        if (users_map.has(user.username)) {
+            console.log("repeat found: " + user.username);
+        }
+
+        // the actual text isn't held in an element in the div, just a text node, so
         // .contents() is needed rather than .children()
-        let $stats = $el.find('div.site-info > div.site-stats > a');
-        let visitors = Number($stats.contents().filter((i, node) => node.type === 'text').text().replaceAll(/(\s|,)/g, ''));
+        // remove commas from the visitor count, so, say, "12,345,678" becomes "12345678"
+        user.visitors = Number($stats.contents().filter((i, node) => node.type === 'text').text().replaceAll(',', ''));
 
-        let username = $stats.attr('href').replace('/site/', '');
+        $el.find('div.site-info > div.site-tags').children('a').each(function(i, el) {
+            user.tags.push($(el).text());
+        })
 
-        let site = {
-            url: link,
-            title: title,
-            visitors: visitors,
-        };
+        // check if there's a heart icon; if there is (ie, the number of child elements that match 'i.fa-heart' is greater than zero), then this user is a supporter
+        if ($el.find('div.site-info > div.username > a > i').has('i.fa-heart').length > 0) {
+            user.is_supporter = true;
+        }
 
-        map.set(username, site);
+        users_map.set(user.username, user);
     });
-
-    return map;
-}
-
-async function getFollowersAndFollows(username) {
-    const url = `https://neocities.org/site/${username}/`
-    const all_sites = new Map();
-
-
-    // followers
-    let this_pages_sites;
-    let pageNr = 1;
-    let nrFollowers = 0;
-    do {
-        this_pages_sites = await getLinksOnBrowsePage(`${url}followers?page=${pageNr}`);
-        this_pages_sites.forEach((v, k) => all_sites.set(k, v));
-        pageNr++;
-        nrFollowers += this_pages_sites.size;
-    } while (this_pages_sites.size > 0);
-    console.log(`found ${pageNr - 1} pages and ${nrFollowers} followers`);
-
-    // follows
-    pageNr = 1;
-    let nrFollows = 0;
-    do {
-        this_pages_sites = await getLinksOnBrowsePage(`${url}follows?page=${pageNr}`);
-        this_pages_sites.forEach((v, k) => all_sites.set(k, v));
-        pageNr++;
-        nrFollows += this_pages_sites.size;
-    } while (this_pages_sites.size > 0);
-    console.log(`found ${pageNr - 1} pages and ${nrFollows} following`);
-
-    return all_sites;
 }
 
 // crawls the given site looking for any other neocities sites this might link to
@@ -123,61 +81,36 @@ function crawl(baseURL) {
 
 }
 
+async function getAllSites(users_map) {
+    let promises = [];
+    const baseURL = `https://neocities.org/browse?sort_by=newest&page=`
+    for (let i = 1; i <= 5930; i++) {
+        try {
+            promises.push(getLinksOnBrowsePage(users_map, baseURL + i));
+            await new Promise(r => setTimeout(r, 2000));
+        } catch (err) {
+            console.error(`failed on page ${i}: ${err}`);
+        }
+    }
+    return Promise.all(promises);
+}
+
 // "main"
 (async () => {
-    const browseOptions = [
-        "special_sauce",
-        "random",
-        "most_followed",
-        "last_updated",
-        "views",
-        "tipping_enabled",
-        "newest",
-        "oldest"
-    ]
 
-    /*
-    if (process.argv.includes('rerun') || !fs.existsSync("sites.json")) {
-        console.log('regenerating data!');
-        const sites = new Map();
-        // for (const opt of browseOptions) {
-        //     await getLinksOnBrowse(opt, 1, sites);
-        // }
-        await getLinksOnBrowsePage("special_sauce", 1, sites);
+    let users;
+    // load the data, either by pulling from the website or loading the json
+    if (process.argv.includes('rerun') || !fs.existsSync("users.json")) {
+        // part 1: get all the users from the "newest" search category
+        console.log('getting info from neocities');
+        users = new Map(); // (username, {user object})
+        await getAllSites(users);
 
-        fs.writeFileSync("sites.json", JSON.stringify(Object.fromEntries(sites)));
+        fs.writeFileSync("users.json", JSON.stringify(Object.fromEntries(users)));
     } else {
-        console.log('reading from sites.json...');
-        const sites = new Map(Object.entries(JSON.parse(fs.readFileSync("sites.json"))));
-        sites.forEach((v, k) => {
-            process.stdout.write(`(${k}, ${v.url}) and `);
-        })
+        console.log('reading from users.json...');
+        users = new Map(Object.entries(JSON.parse(fs.readFileSync("users.json"))));
     }
-    */
-
-    /*
-    const sites = new Map();
-    // const url = `https://neocities.org/browse?sort_by=special_sauce&page=57`;
-    await getLinksOnBrowsePage("https://neocities.org/site/dreamy/followers", sites);
-    // await getLinksOnBrowse(url, sites);
-    console.log('nr sites found: ' + sites.size);
-    sites.forEach((v, k) => {
-        process.stdout.write(`(${k}, ${v.url}) and \n`);
-    })
-    */
-    /*
-    const sites = new Map();
-    (await getFollowersAndFollows("dreamy")).forEach((v, k) => {
-        sites.set(k, v);
-    });
-
-    sites.forEach((v, k) => {
-        console.log(`(${k}\t=>\t${v.url})`);
-    })
-    fs.writeFileSync("dreamyfollows.json", JSON.stringify(Object.fromEntries(sites)));
-    */
-    getPopularTags();
-
-
+    console.log(`${users.size} unique users found.`);
 
 })();
