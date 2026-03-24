@@ -76,11 +76,17 @@ async function getLinksOnBrowsePage(users_map, url) {
     });
 }
 
+
 // crawls the given site looking for any other neocities sites this might link to
 function crawl(baseURL) {
 
 }
 
+// populate the passed-in map with every user found by scanning all pages in the
+// "newest" category on neocities. also will pick up information like whether the
+// user is a supporter, how many visitors they have, and what tags they have, since
+// this information is displayed on te "newest" page as well.
+// note: this will take a while (5930 pages ~= 3 hrs)
 async function getAllSites(users_map) {
     let promises = [];
     const baseURL = `https://neocities.org/browse?sort_by=newest&page=`
@@ -95,22 +101,62 @@ async function getAllSites(users_map) {
     return Promise.all(promises);
 }
 
+async function visitAllProfiles(users_map) {
+
+}
+
 // "main"
 (async () => {
 
+    const complaint = `Pass one of the following arguments when you run this thingy.
+    scrape    to regenerate list of users by scraping neocities
+    update    to update list of users based on
+    usernames to generate a newline-separated list of all usernames
+So for example:
+    npm start update
+    `
+
+    if (process.argv.length != 3) {
+        console.log(complaint);
+        return;
+    }
+
     let users;
     // load the data, either by pulling from the website or loading the json
-    if (process.argv.includes('rerun') || !fs.existsSync("users.json")) {
-        // part 1: get all the users from the "newest" search category
-        console.log('getting info from neocities');
+    const mode = process.argv[2];
+    if (mode === "scrape") {
+        // part 1: get all users by using the "newest" search category
+        console.log('getting info from neocities...');
         users = new Map(); // (username, {user object})
         await getAllSites(users);
 
         fs.writeFileSync("users.json", JSON.stringify(Object.fromEntries(users)));
-    } else {
+    } else if (mode === "update") {
+        // TODO: this.
+        // i was originally thinking "ok, i'll just scan through, newest to oldest, until i hit
+        // a user i've seen before; that must be where the cutoff ended for the last scrape"
+        // but for whatever reason the order of sites when sorting by "newest" doesn't seem
+        // to stay constant, there's some weird few-webpage fluctuation. i thought this might
+        // be due to "newest" actually meaning "newest updated", but that isn't the case either.
+        //
+        // so i think i'll instead check go until a page which has no unseen users is reached.
+    } else if (mode === "usernames") {
         console.log('reading from users.json...');
+        if (!fs.existsSync("users.json")) {
+            console.error('users.json does not exist. do you need to unzip users.json.gz?');
+            return;
+        }
         users = new Map(Object.entries(JSON.parse(fs.readFileSync("users.json"))));
+
+        console.log('generating usernames.txt...');
+        let bigString = "";
+        users.forEach((user) => {
+            bigString = bigString + user.username + "\n";
+        });
+        fs.writeFileSync("usernames.txt", bigString);
+        console.log('usernames.txt written.');
+    } else {
+        console.log(complaint);
     }
-    console.log(`${users.size} unique users found.`);
 
 })();
